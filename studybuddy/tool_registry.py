@@ -26,8 +26,9 @@ class ToolRegistry:
         # name -> {"function": callable, "schema": Ollama tool schema}
         self._tools = {}
 
-    def register(self, name, function, description, parameters):
+    def register(self, name, function, description, parameters, is_mock=False):
         """Add a tool. `parameters` is a JSON Schema object describing its arguments.
+        `is_mock` marks temporary test tools so the logs can show them clearly.
 
         Raises ValueError straight away if the tool does not match its schema,
         so mistakes are found when the program starts, not in the middle of a chat.
@@ -50,6 +51,7 @@ class ToolRegistry:
 
         self._tools[name] = {
             "function": function,
+            "is_mock": is_mock,
             "schema": {
                 "type": "function",
                 "function": {"name": name, "description": description, "parameters": parameters},
@@ -59,6 +61,14 @@ class ToolRegistry:
     def names(self):
         """Return the names of all registered tools."""
         return list(self._tools)
+
+    def is_registered(self, name):
+        """Return True if a tool with this name is registered."""
+        return name in self._tools
+
+    def is_mock(self, name):
+        """Return True if this tool is a temporary mock."""
+        return name in self._tools and self._tools[name]["is_mock"]
 
     def description(self, name):
         """Return the description of one registered tool."""
@@ -83,7 +93,8 @@ class ToolRegistry:
 
         try:
             result = tool["function"](**clean_arguments)
-        except Exception as error:
+        except (Exception, SystemExit) as error:
+            # SystemExit is caught too, so a tool calling sys.exit() cannot close the whole program.
             return {"ok": False, "error": f"Tool '{name}' failed: {type(error).__name__}: {error}"}
 
         return {"ok": True, "result": _make_json_safe(result)}
@@ -137,10 +148,17 @@ def _validate_arguments(arguments, parameters):
 
 
 def _convert_type(key, value, expected_type):
-    """Check a value has the expected JSON type. Small models often send numbers as text,
-    so "5" is accepted for an integer and "2.5" for a number."""
+    """Check a value has the expected JSON type. Small models often send numbers and
+    objects as text, so "5" is accepted for an integer, "2.5" for a number and
+    '{"score": 8}' for an object."""
     if expected_type is None or expected_type not in JSON_TYPES:
         return value
+
+    if expected_type in ("object", "array") and isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            raise ValueError(f"'{key}' must be a JSON {expected_type}, got text that is not valid JSON.") from None
 
     if expected_type in ("integer", "number") and isinstance(value, str):
         try:

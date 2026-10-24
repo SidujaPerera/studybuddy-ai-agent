@@ -4,7 +4,7 @@ import sys
 
 import ollama
 
-from studybuddy import config, register_tools
+from studybuddy import config, logger, register_tools
 from studybuddy.agent import StudyBuddyAgent
 
 HELP_TEXT = """Commands:
@@ -20,6 +20,11 @@ OLLAMA_UNAVAILABLE_TEXT = """Could not connect to Ollama.
 Make sure the Ollama app is running (or run `ollama serve` in another terminal),
 then try again."""
 
+MODEL_MISSING_TEXT = f"""The model '{config.MODEL_NAME}' is not installed in Ollama.
+Download it with: ollama pull {config.MODEL_NAME}"""
+
+NOT_SAVED_TEXT = "Your question was not saved, so you can simply ask it again."
+
 
 def use_utf8_output():
     """Make printing emojis and other Unicode safe on Windows.
@@ -28,7 +33,9 @@ def use_utf8_output():
     cp1252 encoding, which crashes on characters such as emojis.
     """
     for stream in (sys.stdin, sys.stdout, sys.stderr):
-        stream.reconfigure(encoding="utf-8", errors="replace")
+        # Some environments replace or remove the standard streams; leave those alone.
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 def check_ollama():
@@ -37,12 +44,12 @@ def check_ollama():
         installed = [m.model for m in ollama.list().models]
     except ConnectionError:
         return OLLAMA_UNAVAILABLE_TEXT
+    except Exception as error:
+        logger.log_unexpected_error(error)
+        return f"Ollama is not responding correctly ({type(error).__name__}). Try restarting the Ollama app."
 
     if config.MODEL_NAME not in installed:
-        return (
-            f"The model '{config.MODEL_NAME}' is not installed in Ollama.\n"
-            f"Download it with: ollama pull {config.MODEL_NAME}"
-        )
+        return MODEL_MISSING_TEXT
     return None
 
 
@@ -81,9 +88,21 @@ def ask_agent(agent, question):
         answer = agent.ask(question)
     except ConnectionError:
         print(OLLAMA_UNAVAILABLE_TEXT)
+        print(NOT_SAVED_TEXT)
         return
     except ollama.ResponseError as error:
-        print(f"Ollama returned an error: {error.error}")
+        if error.status_code == 404:
+            print(MODEL_MISSING_TEXT)
+        else:
+            print(f"Ollama reported a problem: {error.error}")
+        print(NOT_SAVED_TEXT)
+        return
+    except Exception as error:
+        # For example the Ollama connection dropping in the middle of a reply.
+        logger.log_unexpected_error(error)
+        print(f"Something went wrong while talking to the model ({type(error).__name__}).")
+        print("If Ollama was closed or restarted, start it again. Details are in the log file.")
+        print(NOT_SAVED_TEXT)
         return
 
     for call in agent.tool_calls_made:
@@ -95,15 +114,26 @@ def ask_agent(agent, question):
 def run_cli():
     """Main loop: read what the student types and respond until they exit."""
     use_utf8_output()
+    log_file = logger.setup_logging()
     print("=== Study Buddy - your AI study assistant ===")
     print(f"Model: {config.MODEL_NAME}. Type /help for commands.")
+    print(f"Tool calls are logged to {log_file}")
 
     problem = check_ollama()
     if problem:
         print(problem)
         return
 
-    agent = StudyBuddyAgent(registry=register_tools.build_registry())
+    try:
+        registry = register_tools.build_registry()
+    except Exception as error:
+        # For example a tool whose schema does not match its Python function.
+        logger.log_unexpected_error(error)
+        print(f"Could not load the study tools: {error}")
+        return
+
+    agent = StudyBuddyAgent(registry=registry)
+    logger.log_session_start(config.MODEL_NAME, registry.names(), register_tools.USE_MOCK_TOOLS)
     if register_tools.USE_MOCK_TOOLS:
         print(MOCK_WARNING)
     try:

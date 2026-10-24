@@ -11,14 +11,17 @@ so the model must answer with the information it already has.
 """
 
 import json
+import time
 
 import ollama
 
-from studybuddy import config
+from studybuddy import config, logger
 from studybuddy.prompts import SYSTEM_PROMPT
 from studybuddy.tool_registry import ToolRegistry
 
 NO_ANSWER_TEXT = "Sorry, I couldn't come up with an answer. Please try asking again."
+MALFORMED_TOOL_CALL_TEXT = "Sorry, I tried to use a tool but my request came out garbled. Please try asking again."
+MAX_STEPS_TEXT = "Sorry, I reached my limit of steps for this question. Please try a simpler question."
 
 
 class StudyBuddyAgent:
@@ -39,13 +42,16 @@ class StudyBuddyAgent:
 
     def ask(self, user_text):
         """Answer one student message, using tools if the model asks for them."""
+        logger.log_question(user_text)
         turn_start = len(self.history)
         self.history.append({"role": "user", "content": user_text})
         self.tool_calls_made = []
         try:
             return self._run_agent_loop()
-        except Exception:
-            # Remove this unfinished turn so the history stays consistent.
+        except BaseException:
+            # Any failure (Ollama down, Ctrl+C, ...) removes this unfinished turn,
+            # so the history never holds a question without an answer.
+            logger.log_turn_rolled_back(len(self.history) - turn_start)
             del self.history[turn_start:]
             raise
 
@@ -54,18 +60,42 @@ class StudyBuddyAgent:
 
         for step in range(1, self.max_steps + 1):
             is_last_step = step == self.max_steps
-            response = ollama.chat(
-                model=self.model,
-                messages=self.history,
-                tools=None if is_last_step or not tools else tools,
-                think=config.THINK,
-            )
+            offer_tools = bool(tools) and not is_last_step
+            if is_last_step and tools:
+                logger.log_max_steps(self.max_steps)
+
+            started = time.time()
+            try:
+                response = ollama.chat(
+                    model=self.model,
+                    messages=self.history,
+                    tools=tools if offer_tools else None,
+                    think=config.THINK,
+                )
+            except Exception as error:
+                logger.log_model_error(step, error)
+                raise
+            logger.log_model_call(step, self.max_steps, offer_tools, time.time() - started)
+
             message = response.message
+            if response.done_reason == "length":
+                logger.log_problem(step, "model reply was cut off (context or length limit reached)")
+
+            if message.tool_calls and not offer_tools:
+                # Tools were not offered, so this request cannot be run. Do not add it to the
+                # history (a tool request without results would break the conversation).
+                logger.log_problem(step, "model requested tools on the final step; request ignored")
+                return self._finish(step, MAX_STEPS_TEXT)
 
             if not message.tool_calls:
-                answer = clean_answer(message.content or "") or NO_ANSWER_TEXT
-                self.history.append({"role": "assistant", "content": answer})
-                return answer
+                answer = clean_answer(message.content or "")
+                if "<tool_call>" in answer:
+                    logger.log_problem(step, "model wrote a tool call as plain text instead of a real tool call")
+                    answer = MALFORMED_TOOL_CALL_TEXT
+                elif not answer:
+                    logger.log_problem(step, "model returned an empty answer")
+                    answer = NO_ANSWER_TEXT
+                return self._finish(step, answer)
 
             # The model asked for one or more tools. First remember its request...
             self.history.append(_assistant_tool_request(message))
@@ -74,11 +104,17 @@ class StudyBuddyAgent:
                 name = call.function.name
                 arguments = dict(call.function.arguments or {})
                 result = self.registry.execute(name, arguments)
+                logger.log_tool_call(step, name, arguments, result,
+                                     self.registry.is_mock(name), self.registry.is_registered(name))
                 self.tool_calls_made.append({"step": step, "name": name, "arguments": arguments, "result": result})
-                self.history.append({"role": "tool", "tool_name": name, "content": json.dumps(result)})
+                self.history.append({"role": "tool", "tool_name": name, "content": _tool_result_text(result)})
 
-        # Only reached if the final no-tools call still returned tool calls (should not happen).
-        answer = "Sorry, I reached my limit of steps for this question. Please try a simpler question."
+        # Not reachable: the last step never runs tools. Kept as a safety net.
+        return self._finish(self.max_steps, MAX_STEPS_TEXT)
+
+    def _finish(self, step, answer):
+        """Save the final answer in the history and return it."""
+        logger.log_final_answer(step, answer)
         self.history.append({"role": "assistant", "content": answer})
         return answer
 
@@ -97,6 +133,15 @@ def _assistant_tool_request(message):
         # Keep the reasoning so the model remembers why it chose these tools.
         request["thinking"] = message.thinking
     return request
+
+
+def _tool_result_text(result):
+    """Turn a tool result into text for the model, shortened if it is very long."""
+    text = json.dumps(result, ensure_ascii=False)
+    limit = config.MAX_TOOL_RESULT_CHARS
+    if len(text) > limit:
+        text = text[:limit] + f"... [result shortened: {len(text) - limit} more characters not shown]"
+    return text
 
 
 def clean_answer(text):

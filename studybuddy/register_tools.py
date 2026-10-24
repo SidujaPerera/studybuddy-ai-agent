@@ -13,53 +13,57 @@ from studybuddy.tool_registry import ToolRegistry
 USE_MOCK_TOOLS = True
 
 # What the model is told about each tool.
-# PROVISIONAL: parameter names and types are NOT yet confirmed with Mehansa.
+# Parameter NAMES and TYPES are confirmed by Mehansa.
+# Still PROVISIONAL (marked below): which parameters are required, the quiz_tracker
+# actions and data structures, and the date format.
 TOOL_SCHEMAS = {
     "search_notes": {
-        "description": "Search the student's own study notes for a topic or keyword.",
+        "description": "Search the student's saved study notes (.txt, .json and .md files) for a topic.",
         "parameters": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Topic or keywords to search for."},
+                "topic": {"type": "string", "description": "Topic to search the notes for."},
             },
-            "required": ["query"],
+            "required": ["topic"],
         },
     },
     "quiz_tracker": {
-        "description": (
-            "Record the student's quiz score for a subject, "
-            "or get their past quiz scores for a subject when no score is given."
-        ),
+        "description": "Save quizzes, log the student's quiz scores and track quiz results.",
         "parameters": {
             "type": "object",
             "properties": {
-                "subject": {"type": "string", "description": "Subject name, e.g. Biology."},
-                "score": {"type": "integer", "description": "Quiz score out of 100. Leave out to get past scores."},
+                # PROVISIONAL: the full list of actions is not confirmed, so no enum is set yet.
+                "action": {"type": "string", "description": "What to do, for example save_quiz or log_score."},
+                # PROVISIONAL: the structure of data for each action is not confirmed.
+                "data": {"type": "object", "description": "Details needed for the action, as a JSON object."},
             },
-            "required": ["subject"],
+            "required": ["action", "data"],  # PROVISIONAL: assumed both required
         },
     },
     "wikipedia_search": {
-        "description": "Look up a topic on Wikipedia and get a short summary.",
+        "description": "Look up educational information about a topic on Wikipedia.",
         "parameters": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Topic to look up."},
+                "query": {"type": "string", "description": "Topic or question to look up."},
             },
             "required": ["query"],
         },
     },
     "schedule_study_session": {
-        "description": "Schedule a study session for the student.",
+        "description": (
+            "Record a planned study session and return a confirmation. "
+            "This does not create calendar invites or send notifications."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
-                "subject": {"type": "string", "description": "What to study."},
-                "date": {"type": "string", "description": "Date in YYYY-MM-DD format."},
-                "time": {"type": "string", "description": "Start time in 24-hour HH:MM format."},
+                # PROVISIONAL: date format (e.g. YYYY-MM-DD) and whether a time is included are not confirmed.
+                "date": {"type": "string", "description": "Date of the study session."},
                 "duration_minutes": {"type": "integer", "description": "Length of the session in minutes."},
+                "topic": {"type": "string", "description": "What the student will study."},
             },
-            "required": ["subject", "date", "time"],
+            "required": ["date", "duration_minutes", "topic"],  # PROVISIONAL: assumed all required
         },
     },
 }
@@ -88,5 +92,6 @@ def build_registry():
 
     registry = ToolRegistry()
     for name, schema in TOOL_SCHEMAS.items():
-        registry.register(name, functions[name], schema["description"], schema["parameters"])
+        registry.register(name, functions[name], schema["description"], schema["parameters"],
+                          is_mock=USE_MOCK_TOOLS)
     return registry

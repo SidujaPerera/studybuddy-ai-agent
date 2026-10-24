@@ -7,6 +7,10 @@ MODEL_NAME = "qwen3:4b"
 # Used by the tool-calling loop (Milestone 5).
 MAX_STEPS = 10
 
+# Longest tool result (in characters) sent back to the model. Longer results are cut
+# so a big notes file cannot overflow the model's context window.
+MAX_TOOL_RESULT_CHARS = 4000
+
 # qwen3 always reasons before answering. True keeps that reasoning in a
 # separate field (response.message.thinking) so it never appears in the answer.
 THINK = True
