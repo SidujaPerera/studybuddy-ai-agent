@@ -1,0 +1,19 @@
+# Python virtual environment
+.venv/
+venv/
+
+# Python generated files
+__pycache__/
+*.pyc
+
+# IntelliJ IDEA settings
+.idea/
+*.iml
+
+# Local environment and secrets
+.env
+.env.*
+
+# Temporary files
+*.log
+.pytest_cache/
