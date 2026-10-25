@@ -1,0 +1,13 @@
+{
+  "title": "The Water Cycle",
+  "note_type": "Sample demonstration note for Study Buddy (fictional, not a real student's notes)",
+  "summary": "The water cycle is the continuous movement of water between the oceans, the air and the land, powered by energy from the Sun.",
+  "stages": [
+    {"name": "Evaporation", "description": "The Sun heats water in oceans, lakes and rivers and it turns into water vapour."},
+    {"name": "Transpiration", "description": "Plants release water vapour from their leaves into the air."},
+    {"name": "Condensation", "description": "Water vapour cools as it rises and forms tiny droplets, which make clouds."},
+    {"name": "Precipitation", "description": "Droplets join together and fall as rain, snow, sleet or hail."},
+    {"name": "Collection", "description": "Water gathers in oceans, rivers, lakes and underground (groundwater), and the cycle repeats."}
+  ],
+  "key_terms": ["evaporation", "condensation", "precipitation", "transpiration", "runoff", "groundwater"]
+}

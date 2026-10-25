@@ -17,3 +17,6 @@ __pycache__/
 # Temporary files
 *.log
 .pytest_cache/
+
+# Runtime quiz and study-session records (may contain student names)
+study_buddy_data/

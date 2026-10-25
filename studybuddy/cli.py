@@ -72,13 +72,37 @@ def handle_command(command, agent):
     return True
 
 
-def show_tools(agent):
-    """Print the tools the agent can use."""
+def show_mock_warning(registry):
+    """Warn clearly if any tool returns mock (placeholder) data."""
     if register_tools.USE_MOCK_TOOLS:
         print(MOCK_WARNING)
+    else:
+        for name in registry.names():
+            if registry.is_mock(name):
+                print(f"NOTE: {name} is in MOCK mode - its results are fake placeholder data.")
+
+
+def show_tools(agent):
+    """Print the tools the agent can use."""
+    show_mock_warning(agent.registry)
     print("Study tools:")
     for name in agent.registry.names():
-        print(f"  {name}: {agent.registry.description(name)}")
+        mock_label = " [MOCK]" if agent.registry.is_mock(name) else ""
+        print(f"  {name}{mock_label}: {agent.registry.description(name)}")
+
+
+def describe_tool_result(result):
+    """Short text for one tool call, e.g. 'ok (source: live)' or 'no results'."""
+    if not result["ok"]:
+        text = "error: " + result["error"]
+    elif result.get("status") == "not_found":
+        text = "no results"
+    else:
+        text = "ok"
+    source = logger.result_source(result)
+    if source:
+        text += f" (source: {source})"
+    return text
 
 
 def ask_agent(agent, question):
@@ -106,7 +130,7 @@ def ask_agent(agent, question):
         return
 
     for call in agent.tool_calls_made:
-        status = "ok" if call["result"]["ok"] else "error: " + call["result"]["error"]
+        status = describe_tool_result(call["result"])
         print(f"  [step {call['step']}] used tool {call['name']}({call['arguments']}) -> {status}")
     print(f"\nStudy Buddy: {answer}")
 
@@ -133,9 +157,9 @@ def run_cli():
         return
 
     agent = StudyBuddyAgent(registry=registry)
-    logger.log_session_start(config.MODEL_NAME, registry.names(), register_tools.USE_MOCK_TOOLS)
-    if register_tools.USE_MOCK_TOOLS:
-        print(MOCK_WARNING)
+    logger.log_session_start(config.MODEL_NAME, registry.names(), register_tools.USE_MOCK_TOOLS,
+                             [name for name in registry.names() if registry.is_mock(name)])
+    show_mock_warning(registry)
     try:
         while True:
             user_text = input("\nYou: ").strip()

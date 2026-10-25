@@ -16,6 +16,7 @@ import time
 import ollama
 
 from studybuddy import config, logger
+from studybuddy.claim_check import add_unverified_warning, find_unverified_claims
 from studybuddy.prompts import SYSTEM_PROMPT
 from studybuddy.tool_registry import ToolRegistry
 
@@ -114,6 +115,13 @@ class StudyBuddyAgent:
 
     def _finish(self, step, answer):
         """Save the final answer in the history and return it."""
+        # Do not let the answer claim an action (scheduled, saved, recorded)
+        # that no tool actually completed while answering this message.
+        problems = find_unverified_claims(answer, self.tool_calls_made)
+        if problems:
+            for problem in problems:
+                logger.log_problem(step, f"UNVERIFIED CLAIM: {problem}")
+            answer = add_unverified_warning(answer, problems)
         logger.log_final_answer(step, answer)
         self.history.append({"role": "assistant", "content": answer})
         return answer

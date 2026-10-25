@@ -4,7 +4,12 @@ The agent never calls a tool function directly. It asks the registry, which:
   1. checks the tool name is registered,
   2. checks the arguments against the tool's schema,
   3. runs the function and catches any error,
-  4. returns a JSON-serializable dict: {"ok": True, "result": ...} or {"ok": False, "error": "..."}.
+  4. returns a JSON-serializable dict:
+       {"ok": True,  "status": "success",   "result": ...}
+       {"ok": True,  "status": "not_found", "result": ...}   the tool worked but found nothing
+       {"ok": False, "status": "error",     "error": "...", "result": ...}   "result" only if the tool returned one
+
+A tool can report its own failure by returning {"status": "error", "message": "..."}.
 """
 
 import inspect
@@ -26,9 +31,11 @@ class ToolRegistry:
         # name -> {"function": callable, "schema": Ollama tool schema}
         self._tools = {}
 
-    def register(self, name, function, description, parameters, is_mock=False):
+    def register(self, name, function, description, parameters, is_mock=False, extra_check=None):
         """Add a tool. `parameters` is a JSON Schema object describing its arguments.
         `is_mock` marks temporary test tools so the logs can show them clearly.
+        `extra_check(arguments)` is optional: it runs after the schema checks and returns
+        an error message (str) if the arguments are invalid, or None if they are fine.
 
         Raises ValueError straight away if the tool does not match its schema,
         so mistakes are found when the program starts, not in the middle of a chat.
@@ -52,6 +59,7 @@ class ToolRegistry:
         self._tools[name] = {
             "function": function,
             "is_mock": is_mock,
+            "extra_check": extra_check,
             "schema": {
                 "type": "function",
                 "function": {"name": name, "description": description, "parameters": parameters},
@@ -82,22 +90,46 @@ class ToolRegistry:
         """Run a registered tool safely. Never raises; problems come back as {"ok": False, ...}."""
         if name not in self._tools:
             available = ", ".join(self._tools) or "none"
-            return {"ok": False, "error": f"Unknown tool '{name}'. Available tools: {available}."}
+            return _failure(f"Unknown tool '{name}'. Available tools: {available}.")
 
         tool = self._tools[name]
         parameters = tool["schema"]["function"]["parameters"]
         try:
             clean_arguments = _validate_arguments(arguments, parameters)
         except ValueError as error:
-            return {"ok": False, "error": f"Invalid arguments for '{name}': {error}"}
+            return _failure(f"Invalid arguments for '{name}': {error}")
+
+        if tool["extra_check"] is not None:
+            try:
+                problem = tool["extra_check"](clean_arguments)
+            except Exception as error:
+                problem = f"argument check failed ({type(error).__name__}: {error})"
+            if problem:
+                return _failure(f"Invalid arguments for '{name}': {problem}")
 
         try:
             result = tool["function"](**clean_arguments)
         except (Exception, SystemExit) as error:
             # SystemExit is caught too, so a tool calling sys.exit() cannot close the whole program.
-            return {"ok": False, "error": f"Tool '{name}' failed: {type(error).__name__}: {error}"}
+            return _failure(f"Tool '{name}' failed: {type(error).__name__}: {error}")
 
-        return {"ok": True, "result": _make_json_safe(result)}
+        result = _make_json_safe(result)
+        status = result.get("status") if isinstance(result, dict) else None
+        if status == "error":
+            # The tool reported its own failure. Keep its full answer so the model can read it.
+            message = result.get("message") or "the tool reported an error"
+            return _failure(f"Tool '{name}' reported an error: {message}", result)
+        if status == "not_found":
+            return {"ok": True, "status": "not_found", "result": result}
+        return {"ok": True, "status": "success", "result": result}
+
+
+def _failure(message, result=None):
+    """Build the registry's standard failure answer."""
+    failure = {"ok": False, "status": "error", "error": message}
+    if result is not None:
+        failure["result"] = result
+    return failure
 
 
 def _check_function_matches_schema(name, function, properties, required):

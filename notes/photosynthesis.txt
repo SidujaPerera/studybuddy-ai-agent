@@ -1,0 +1,25 @@
+PHOTOSYNTHESIS
+Sample demonstration note for Study Buddy (fictional, not a real student's notes).
+
+What it is:
+Photosynthesis is how plants, algae and some bacteria make their own food using light energy.
+
+Word equation:
+carbon dioxide + water --(light, chlorophyll)--> glucose + oxygen
+
+Where it happens:
+In the chloroplasts, mainly in leaf cells. Chlorophyll is the green pigment that absorbs light.
+
+Two stages:
+1. Light-dependent reactions (in the thylakoid membranes): light energy splits water,
+   releasing oxygen and making ATP and NADPH.
+2. Calvin cycle / light-independent reactions (in the stroma): ATP and NADPH are used
+   to turn carbon dioxide into glucose.
+
+Factors that affect the rate:
+- Light intensity
+- Carbon dioxide concentration
+- Temperature
+
+Why it matters:
+It produces the oxygen we breathe and is the starting point of most food chains.

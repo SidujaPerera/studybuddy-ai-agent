@@ -11,6 +11,10 @@ MAX_STEPS = 10
 # so a big notes file cannot overflow the model's context window.
 MAX_TOOL_RESULT_CHARS = 4000
 
+# Developer-only switch. True makes wikipedia_search return clearly labelled fake
+# results (source=mock) instead of calling Wikipedia. The model can never change this.
+WIKIPEDIA_USE_MOCK = False
+
 # qwen3 always reasons before answering. True keeps that reasoning in a
 # separate field (response.message.thinking) so it never appears in the answer.
 THINK = True
