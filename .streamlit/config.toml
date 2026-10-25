@@ -1,0 +1,10 @@
+[theme]
+primaryColor = "#6857E8"
+backgroundColor = "#F7F7FC"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#171A35"
+font = "sans serif"
+
+[browser]
+# Do not send usage statistics to Streamlit.
+gatherUsageStats = false

@@ -7,8 +7,12 @@ WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
 TIMEOUT_SECONDS = 10
 MAX_RESULTS = 5
 
+# Wikimedia's User-Agent policy requires a client name, contact information (website or
+# email) and the HTTP library; generic or anonymous agents are refused with HTTP 403.
+# https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy
+PROJECT_URL = "https://github.com/SidujaPerera/studybuddy-ai-agent"
 HEADERS = {
-    "User-Agent": "StudyBuddyAI/1.0 (university educational project)"
+    "User-Agent": f"StudyBuddyAI/1.0 ({PROJECT_URL}; university educational project) httpx/{httpx.__version__}"
 }
 
 VERIFY_NOTE = "Verify important information using reliable academic sources."
